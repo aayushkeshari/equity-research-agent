@@ -55,6 +55,19 @@ If `OPENAI_API_KEY` is configured, the project can ask a model to rank the deter
 - Streamlit dashboard
 
 ---
+## Demo
+
+### Financial snapshot
+
+The dashboard retrieves SEC filings and XBRL facts, identifies comparable reporting periods, and surfaces financial and qualitative changes for analyst review.
+
+![Equity Research Agent dashboard](docs/images/dashboard.png)
+
+### Evidence-backed research leads
+
+Each research lead links the detected change back to the underlying filing text or XBRL fact, allowing the analyst to inspect the evidence rather than relying on an opaque AI-generated conclusion.
+
+![Evidence-backed research leads](docs/images/research-leads.png)
 
 ## Architecture
 
