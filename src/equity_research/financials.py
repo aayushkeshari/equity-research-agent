@@ -68,6 +68,23 @@ def _days_between(start: str | None, end: str) -> int | None:
     return (date.fromisoformat(end) - date.fromisoformat(start)).days
 
 
+def _fact_duration_days(fact: FinancialFact) -> int | None:
+    return _days_between(fact.start, fact.end)
+
+
+def _duration_compatible(a: FinancialFact, b: FinancialFact, tolerance_days: int = 7) -> bool:
+    """Return True when two duration facts represent comparable spans.
+
+    Instant facts (no start date) are comparable by period end. Duration facts must
+    have nearly equal spans so a quarter is not compared with a cumulative YTD fact.
+    """
+    a_days = _fact_duration_days(a)
+    b_days = _fact_duration_days(b)
+    if a_days is None or b_days is None:
+        return a_days is None and b_days is None
+    return abs(a_days - b_days) <= tolerance_days
+
+
 def _candidate_score(
     fact: dict[str, Any],
     filing: FilingMetadata,
@@ -152,6 +169,10 @@ def _derived(facts: dict[str, FinancialFact]) -> dict[str, float]:
         fact = facts.get(name)
         return fact.value if fact else None
 
+    def compatible(a: str, b: str) -> bool:
+        fa, fb = facts.get(a), facts.get(b)
+        return bool(fa and fb and _duration_compatible(fa, fb))
+
     revenue = v("revenue")
     gross = v("gross_profit")
     op = v("operating_income")
@@ -161,17 +182,17 @@ def _derived(facts: dict[str, FinancialFact]) -> dict[str, float]:
     ocf = v("operating_cash_flow")
 
     if revenue and revenue != 0:
-        if gross is not None:
+        if gross is not None and compatible("revenue", "gross_profit"):
             out["gross_margin"] = gross / revenue
-        if op is not None:
+        if op is not None and compatible("revenue", "operating_income"):
             out["operating_margin"] = op / revenue
-        if net is not None:
+        if net is not None and compatible("revenue", "net_income"):
             out["net_margin"] = net / revenue
-        if rnd is not None:
+        if rnd is not None and compatible("revenue", "research_and_development"):
             out["rnd_intensity"] = rnd / revenue
-        if capex is not None:
+        if capex is not None and compatible("revenue", "capex"):
             out["capex_intensity"] = capex / revenue
-    if ocf is not None and capex is not None:
+    if ocf is not None and capex is not None and compatible("operating_cash_flow", "capex"):
         out["free_cash_flow"] = ocf - capex
 
     return out
@@ -218,7 +239,10 @@ def _fact_evidence(fact: FinancialFact, period: str, idx: int) -> Evidence:
         source_type="xbrl",
         period=period,
         label=f"us-gaap:{fact.concept}",
-        excerpt=f"{fact.label}: {_money(fact.value)} ({fact.unit})",
+        excerpt=(
+            f"{fact.label}: {_money(fact.value)} ({fact.unit})"
+            + (f" | {fact.start} to {fact.end} ({_fact_duration_days(fact)} days)" if fact.start else f" | as of {fact.end}")
+        ),
         accession_number=fact.accession_number,
         metadata={
             "metric": fact.metric,
@@ -228,6 +252,7 @@ def _fact_evidence(fact: FinancialFact, period: str, idx: int) -> Evidence:
             "start": fact.start,
             "end": fact.end,
             "frame": fact.frame,
+            "duration_days": _fact_duration_days(fact),
         },
     )
 
@@ -263,6 +288,14 @@ def compare_financial_periods(
         prior_fact = prior.facts.get(metric)
         if not prior_fact:
             continue
+
+        # Never compare a standalone quarter with a cumulative YTD duration.
+        # This is especially important for cash-flow concepts that companies may
+        # disclose only cumulatively in 10-Q XBRL facts.
+        if current_fact.start or prior_fact.start:
+            if not _duration_compatible(current_fact, prior_fact):
+                continue
+
         pct = _pct_change(current_fact.value, prior_fact.value)
         if pct is None:
             continue
@@ -306,6 +339,21 @@ def compare_financial_periods(
     for metric, current_value in current.derived.items():
         if metric not in prior.derived:
             continue
+
+        # Derived metrics can be valid within each individual filing but still be
+        # invalid to compare across filings when their source facts span different
+        # durations. For example, FCF computed from 9-month OCF/capex must not be
+        # compared with FCF computed from 6-month OCF/capex.
+        if metric == "free_cash_flow":
+            source_metrics = ("operating_cash_flow", "capex")
+            if any(
+                source not in current.facts
+                or source not in prior.facts
+                or not _duration_compatible(current.facts[source], prior.facts[source])
+                for source in source_metrics
+            ):
+                continue
+
         prior_value = prior.derived[metric]
         delta = current_value - prior_value
 

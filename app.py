@@ -17,6 +17,32 @@ from equity_research.sec_client import SECClient
 load_dotenv()
 st.set_page_config(page_title="Equity Research Agent", page_icon="📈", layout="wide")
 
+
+def _duration_days(fact):
+    if not fact or not fact.start:
+        return None
+    from datetime import date
+    return (date.fromisoformat(fact.end) - date.fromisoformat(fact.start)).days
+
+
+def _period_label(fact):
+    if not fact:
+        return "—"
+    days = _duration_days(fact)
+    return f"{fact.start} → {fact.end} ({days}d)" if days is not None else f"As of {fact.end}"
+
+
+def _format_change(current, prior):
+    if not prior or not prior.value:
+        return "—"
+    # Only show a change when duration facts have comparable spans.
+    cur_days, prior_days = _duration_days(current), _duration_days(prior)
+    if (cur_days is None) != (prior_days is None):
+        return "Not comparable"
+    if cur_days is not None and abs(cur_days - prior_days) > 7:
+        return "Not comparable"
+    return f"{((current.value-prior.value)/abs(prior.value)):+.1%}"
+
 st.title("Equity Research Agent")
 st.caption("Evidence-first SEC filing + XBRL change detection")
 
@@ -57,8 +83,10 @@ if run:
         rows.append({
             "Metric": fact.label,
             "Current": fact.value,
+            "Current period": _period_label(fact),
             "Prior": prior.value if prior else None,
-            "Change %": ((fact.value-prior.value)/abs(prior.value)) if prior and prior.value else None,
+            "Prior period": _period_label(prior),
+            "Change": _format_change(fact, prior),
             "XBRL concept": fact.concept,
         })
     st.dataframe(rows, use_container_width=True, hide_index=True)
@@ -83,6 +111,14 @@ if run:
             for ev in lead.evidence:
                 st.markdown(f"**{ev.evidence_id} · {ev.period} · {ev.label}**")
                 st.write(ev.excerpt)
+                if ev.source_type == "xbrl" and ev.metadata:
+                    start = ev.metadata.get("start")
+                    end = ev.metadata.get("end")
+                    days = ev.metadata.get("duration_days")
+                    if start:
+                        st.caption(f"XBRL period: {start} → {end} ({days} days)")
+                    else:
+                        st.caption(f"XBRL instant: {end}")
 
     md = markdown_report(bundle)
     js = json_report(bundle)
