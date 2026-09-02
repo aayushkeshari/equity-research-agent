@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "equity-research-agent"
+version = "1.0.0"
+description = "Evidence-first SEC filing and XBRL research pipeline"
+requires-python = ">=3.11"
+dependencies = [
+  "beautifulsoup4>=4.12,<5",
+  "python-dotenv>=1.0,<2",
+  "requests>=2.32,<3",
+  "rich>=13.7,<15",
+  "streamlit>=1.38,<2",
+  "openai>=1.50,<3",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+equity-research = "equity_research.cli:main"

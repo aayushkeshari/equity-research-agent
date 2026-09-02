@@ -1,0 +1,6 @@
+beautifulsoup4>=4.12,<5
+python-dotenv>=1.0,<2
+requests>=2.32,<3
+rich>=13.7,<15
+streamlit>=1.38,<2
+openai>=1.50,<3
