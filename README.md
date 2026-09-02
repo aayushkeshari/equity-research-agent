@@ -253,3 +253,5 @@ The repo already contains the complete portfolio MVP. Natural extensions include
 ## Data-source note
 
 SEC `data.sec.gov` APIs provide public company submissions and extracted XBRL facts without an API key. Automated access should identify the requester, cache responses, and avoid aggressive request rates.
+
+Created by Aayush Keshari
